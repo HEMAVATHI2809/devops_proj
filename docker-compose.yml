@@ -1,9 +1,13 @@
+version: "3.9"
+
 services:
   frontend:
     build:
       context: ./frontend
+      dockerfile: Dockerfile
       args:
         REACT_APP_API_URL: /api
+    image: appointment-frontend:latest
     container_name: appointment-frontend
     ports:
       - "3000:80"
@@ -17,6 +21,8 @@ services:
   backend:
     build:
       context: ./backend
+      dockerfile: Dockerfile
+    image: appointment-backend:latest
     container_name: appointment-backend
     ports:
       - "5000:5000"
