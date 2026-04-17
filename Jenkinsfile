@@ -27,33 +27,16 @@ pipeline {
 
         stage('Build') {
             steps {
-                sh '''
-                    docker run --rm -v "$PWD/backend:/app" -w /app node:18-alpine sh -lc '
-                      if [ -f package-lock.json ]; then
-                        npm ci
-                      else
-                        npm install
-                      fi
-                    '
-                '''
-                sh '''
-                    docker run --rm -v "$PWD/frontend:/app" -w /app node:18-alpine sh -lc '
-                      if [ -f package-lock.json ]; then
-                        npm ci
-                      else
-                        npm install
-                      fi
-                      npm run build
-                    '
-                '''
+                sh 'docker build --target build -t appointment-frontend-build:latest ./frontend'
+                sh 'docker build -t appointment-backend-build:latest ./backend'
             }
         }
 
         stage('Test') {
             steps {
                 sh 'echo "Running basic placeholder tests..."'
-                sh 'docker run --rm -v "$PWD/backend:/app" -w /app node:18-alpine sh -lc "node -e \\"console.log(\'Backend placeholder test passed\')\\""'
-                sh 'docker run --rm -v "$PWD/frontend:/app" -w /app node:18-alpine sh -lc "node -e \\"console.log(\'Frontend placeholder test passed\')\\""'
+                sh 'echo "Backend placeholder test passed"'
+                sh 'echo "Frontend placeholder test passed"'
             }
         }
 
