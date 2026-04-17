@@ -27,16 +27,33 @@ pipeline {
 
         stage('Build') {
             steps {
-                sh 'docker run --rm -v "$PWD/backend:/app" -w /app node:18-alpine sh -c "npm ci || npm install"'
-                sh 'docker run --rm -v "$PWD/frontend:/app" -w /app node:18-alpine sh -c "npm ci || npm install && npm run build"'
+                sh '''
+                    docker run --rm -v "$PWD/backend:/app" -w /app node:18-alpine sh -lc '
+                      if [ -f package-lock.json ]; then
+                        npm ci
+                      else
+                        npm install
+                      fi
+                    '
+                '''
+                sh '''
+                    docker run --rm -v "$PWD/frontend:/app" -w /app node:18-alpine sh -lc '
+                      if [ -f package-lock.json ]; then
+                        npm ci
+                      else
+                        npm install
+                      fi
+                      npm run build
+                    '
+                '''
             }
         }
 
         stage('Test') {
             steps {
                 sh 'echo "Running basic placeholder tests..."'
-                sh 'docker run --rm -v "$PWD/backend:/app" -w /app node:18-alpine sh -c "node -e \\"console.log(\'Backend placeholder test passed\')\\""'
-                sh 'docker run --rm -v "$PWD/frontend:/app" -w /app node:18-alpine sh -c "node -e \\"console.log(\'Frontend placeholder test passed\')\\""'
+                sh 'docker run --rm -v "$PWD/backend:/app" -w /app node:18-alpine sh -lc "node -e \\"console.log(\'Backend placeholder test passed\')\\""'
+                sh 'docker run --rm -v "$PWD/frontend:/app" -w /app node:18-alpine sh -lc "node -e \\"console.log(\'Frontend placeholder test passed\')\\""'
             }
         }
 
