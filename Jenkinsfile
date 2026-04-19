@@ -15,7 +15,7 @@ pipeline {
         FRONTEND_PORT = '3000'
         BACKEND_PORT = '5000'
         MONGO_PORT = '27017'
-    }
+    } 
 
     stages {
         stage('Checkout') {

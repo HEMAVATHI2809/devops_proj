@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { servicesService } from '../services/servicesService';
 import { appointmentsService } from '../services/appointmentsService';
-import PaymentModal from '../components/PaymentModal';
 import api from '../services/api';
 import './CustomerDashboard.css';
 
@@ -34,10 +33,6 @@ const CustomerDashboard = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [toast, setToast] = useState(null);
-
-  // Payment state
-  const [showPayment, setShowPayment] = useState(false);
-  const [pendingAppointmentId, setPendingAppointmentId] = useState(null);
 
   const [bookingData, setBookingData] = useState({
     serviceId: '',
@@ -103,21 +98,12 @@ const CustomerDashboard = () => {
       );
       
       await appointmentsService.cancelAppointment(appointment._id);
-      
-      // Show refund message if the appointment was paid
-      if (appointment.status === 'paid') {
-        setToast({ 
-          message: 'Appointment cancelled successfully. Payment refunded!', 
-          type: 'success',
-          autoClose: 5000
-        });
-      } else {
-        setToast({ 
-          message: 'Appointment cancelled successfully', 
-          type: 'success',
-          autoClose: 3000
-        });
-      }
+
+      setToast({
+        message: 'Appointment cancelled successfully',
+        type: 'success',
+        autoClose: 3000
+      });
       
       // Refresh the appointments list
       await fetchAppointments();
@@ -151,12 +137,29 @@ const CustomerDashboard = () => {
     setAvailableTimeSlots([]);
   };
 
+  const resolveProviderId = (service) => {
+    if (!service?.providerId) return null;
+    const p = service.providerId;
+    if (typeof p === 'object' && p !== null) return p._id || p.id;
+    return p;
+  };
+
   const handleDateChange = async (date) => {
     setBookingData(prev => ({ ...prev, date, timeSlot: '' }));
     
     if (date && selectedService) {
+      const providerId = resolveProviderId(selectedService);
+      if (!providerId) {
+        setAvailableTimeSlots([]);
+        setError('This service is missing provider information. Try refreshing the page.');
+        return;
+      }
       try {
-        const response = await appointmentsService.getAvailableTimeSlots(selectedService.providerId._id, date);
+        const response = await appointmentsService.getAvailableTimeSlots(
+          providerId,
+          date,
+          selectedService._id
+        );
         setAvailableTimeSlots(response.availableSlots || []);
       } catch (err) {
         console.error('Failed to fetch available time slots:', err);
@@ -176,20 +179,27 @@ const CustomerDashboard = () => {
         throw new Error('Please select both date and time slot');
       }
 
-      // Format date to YYYY-MM-DD
-      const formattedDate = new Date(bookingData.date).toISOString().split('T')[0];
-      
+      // `<input type="date">` is already YYYY-MM-DD — avoid toISOString() timezone shifts
+      const formattedDate = bookingData.date;
+
       // Create appointment
-      const response = await api.post('/appointments', {
+      await api.post('/appointments', {
         serviceId: selectedService._id,
         date: formattedDate,
         timeSlot: bookingData.timeSlot,
         notes: bookingData.notes || ''
       });
-      
-      setPendingAppointmentId(response.data.appointment._id);
+
       setShowBookingForm(false);
-      setShowPayment(true);
+      setSelectedService(null);
+      setBookingData({
+        serviceId: '',
+        date: '',
+        timeSlot: '',
+        notes: ''
+      });
+      setSuccess('Booking submitted. Status: pending — your provider will confirm or reject.');
+      await fetchAppointments();
     } catch (err) {
       const errorMessage = err.response?.data?.message || 
                          err.response?.data?.error || 
@@ -200,33 +210,6 @@ const CustomerDashboard = () => {
     }
   };
 
-  const handlePaymentSuccess = async () => {
-    try {
-      if (pendingAppointmentId) {
-        await api.post(`/appointments/${pendingAppointmentId}/payment`);
-      }
-      setSuccess('Appointment booked and payment successful!');
-      setSelectedService(null);
-      setBookingData({
-        serviceId: '',
-        date: '',
-        timeSlot: '',
-        notes: ''
-      });
-      setShowPayment(false);
-      fetchAppointments();
-    } catch (err) {
-      setError('Payment verification failed.');
-      setShowPayment(false);
-    }
-  };
-
-  const handlePaymentClose = () => {
-    setShowPayment(false);
-    setError('Payment cancelled. Booking is pending.');
-    fetchAppointments();
-  };
-
   const closeModal = () => {
     setShowBookingForm(false);
     setSelectedService(null);
@@ -234,10 +217,17 @@ const CustomerDashboard = () => {
     setSuccess('');
   };
 
+  const toLocalYMD = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   const getMinDate = () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split('T')[0];
+    return toLocalYMD(tomorrow);
   };
 
   useEffect(() => {
@@ -355,13 +345,12 @@ const CustomerDashboard = () => {
                     <h3>{appointment.serviceName}</h3>
                     <div className="status-badges">
                       <span className={`status-badge ${appointment.status}`}>
-                        {appointment.status}
+                        {appointment.status === 'accepted'
+                          ? 'Confirmed'
+                          : appointment.status === 'rejected'
+                            ? 'Rejected'
+                            : appointment.status}
                       </span>
-                      {appointment.paymentStatus === 'success' && (
-                        <span className="status-badge success" style={{marginLeft: '8px', backgroundColor: '#e6fffa', color: '#047857'}}>
-                          ✓ Paid
-                        </span>
-                      )}
                     </div>
                   </div>
                   
@@ -371,12 +360,13 @@ const CustomerDashboard = () => {
                     <p><strong>Time:</strong> {appointment.timeSlot}</p>
                   </div>
 
-                  {appointment.status === 'pending' && (
+                  {(appointment.status === 'pending' || appointment.status === 'accepted') && (
                     <button
+                      type="button"
                       onClick={() => cancelAppointment(appointment)}
                       className="btn btn-secondary cancel-btn"
                     >
-                      Cancel Appointment
+                      Cancel appointment
                     </button>
                   )}
                 </div>
@@ -397,7 +387,7 @@ const CustomerDashboard = () => {
             <div className="service-summary">
               <h3>{selectedService.name}</h3>
               <p>{selectedService.providerId?.businessName || selectedService.providerId?.name}</p>
-              <p className="price-duration">Appointment Fee: ₹{selectedService.appointmentFee || 0}</p>
+              <p className="price-duration">Price: ₹{selectedService.price}</p>
             </div>
             
             <form onSubmit={handleBookingSubmit} className="booking-form">
@@ -443,7 +433,7 @@ const CustomerDashboard = () => {
               
               <div className="form-actions">
                 <button type="submit" className="btn btn-primary">
-                  Proceed to Pay
+                  Submit booking
                 </button>
                 <button type="button" className="btn btn-secondary" onClick={closeModal}>
                   Cancel
@@ -461,15 +451,6 @@ const CustomerDashboard = () => {
         </div>
       )}
 
-      {showPayment && selectedService && (
-        <PaymentModal
-          isOpen={showPayment}
-          onClose={handlePaymentClose}
-          amount={selectedService.appointmentFee || 0}
-          serviceName={selectedService.name}
-          onSuccess={handlePaymentSuccess}
-        />
-      )}
     </div>
   );
 };

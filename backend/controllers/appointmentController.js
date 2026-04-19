@@ -2,11 +2,28 @@ const Appointment = require('../models/Appointment');
 const Service = require('../models/Service');
 const User = require('../models/User');
 
+/** Parse YYYY-MM-DD to UTC midnight for consistent DB queries and uniqueness. */
+const parseBookingDateUtc = (dateInput) => {
+  const s = String(dateInput).trim().slice(0, 10);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return new Date(dateInput);
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  return new Date(Date.UTC(y, mo - 1, d, 0, 0, 0, 0));
+};
+
+const utcDayRange = (dateInput) => {
+  const start = parseBookingDateUtc(dateInput);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, end };
+};
+
 const createAppointment = async (req, res) => {
   try {
     console.log('Request body:', req.body);
     const { serviceId, date, timeSlot, notes } = req.body;
-    const customerId = req.user.id;
+    const customerId = req.user._id;
 
     // Validate required fields
     if (!serviceId || !date || !timeSlot) {
@@ -26,19 +43,23 @@ const createAppointment = async (req, res) => {
         message: 'Service not found' 
       });
     }
-    // Validate date is in the future
-    const appointmentDate = new Date(date);
-    if (appointmentDate <= new Date()) {
+    const appointmentDate = parseBookingDateUtc(date);
+    const today = new Date();
+    const utcDay = (dt) =>
+      Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
+    if (utcDay(appointmentDate) < utcDay(today)) {
       return res.status(400).json({
         success: false,
-        message: 'Appointment date must be in the future'
+        message: 'Appointment date cannot be in the past'
       });
     }
 
-    // Check if the time slot is available for the provider
+    const { start: dayStart, end: dayEnd } = utcDayRange(date);
+
+    // Check if the time slot is available for the provider (same calendar day)
     const existingAppointment = await Appointment.findOne({
       providerId: service.providerId,
-      date: { $eq: appointmentDate },
+      date: { $gte: dayStart, $lt: dayEnd },
       timeSlot,
       status: { $nin: ['rejected', 'cancelled'] }
     });
@@ -201,7 +222,7 @@ const acceptAppointment = async (req, res) => {
 
     // If user is a provider, only allow managing their own appointments
     if (req.user.role === 'provider') {
-      query.providerId = req.user.id;
+      query.providerId = req.user._id;
     }
     
     const appointment = await Appointment.findOne(query);
@@ -248,7 +269,7 @@ const rejectAppointment = async (req, res) => {
 
     // If user is a provider, only allow managing their own appointments
     if (req.user.role === 'provider') {
-      query.providerId = req.user.id;
+      query.providerId = req.user._id;
     }
     
     const appointment = await Appointment.findOne(query);
@@ -291,7 +312,7 @@ const completeAppointment = async (req, res) => {
     const query = {
       _id: req.params.id,
       status: 'accepted',
-      providerId: req.user.id // Only provider can complete appointments
+      providerId: req.user._id
     };
     
     const appointment = await Appointment.findOne(query);
@@ -304,7 +325,7 @@ const completeAppointment = async (req, res) => {
     }
     
     appointment.status = 'completed';
-    appointment.updatedBy = req.user.id;
+    appointment.updatedBy = req.user._id;
     await appointment.save();
     
     res.json({
@@ -376,33 +397,50 @@ const cancelAppointment = async (req, res) => {
 
 const getProviderTimeSlots = async (req, res) => {
   try {
-    const { providerId, date } = req.query;
+    const { providerId, date, serviceId } = req.query;
     
     if (!providerId || !date) {
       return res.status(400).json({ message: 'Provider ID and date are required' });
     }
     
-    // Get provider's services to check available time slots
-    const services = await Service.find({ providerId, isActive: true });
+    let services = await Service.find({ providerId, isActive: true });
     if (services.length === 0) {
       return res.json({ availableSlots: [] });
     }
-    
-    // Get all possible time slots from provider's services
-    const allPossibleSlots = [...new Set(services.flatMap(s => s.availableTimeSlots))];
-    
-    // Get booked slots for the specific date
+
+    if (serviceId) {
+      const one = await Service.findOne({ _id: serviceId, providerId, isActive: true });
+      services = one ? [one] : [];
+    }
+    if (services.length === 0) {
+      return res.json({ availableSlots: [] });
+    }
+
+    const { start: dayStart, end: dayEnd } = utcDayRange(date);
+    const weekday = dayStart.toLocaleDateString('en-US', {
+      weekday: 'long',
+      timeZone: 'UTC'
+    });
+
+    const servicesForDay = services.filter(
+      (s) => Array.isArray(s.availableDays) && s.availableDays.includes(weekday)
+    );
+    if (servicesForDay.length === 0) {
+      return res.json({ availableSlots: [] });
+    }
+
+    const allPossibleSlots = [...new Set(servicesForDay.flatMap((s) => s.availableTimeSlots || []))];
+
     const bookedSlots = await Appointment.find({
       providerId,
-      date: new Date(date),
+      date: { $gte: dayStart, $lt: dayEnd },
       status: { $nin: ['rejected', 'cancelled'] }
     }).select('timeSlot');
-    
-    const bookedSlotTimes = bookedSlots.map(a => a.timeSlot);
-    
-    // Filter out booked slots
-    const availableSlots = allPossibleSlots.filter(slot => !bookedSlotTimes.includes(slot));
-    
+
+    const bookedSlotTimes = bookedSlots.map((a) => a.timeSlot);
+
+    const availableSlots = allPossibleSlots.filter((slot) => !bookedSlotTimes.includes(slot));
+
     res.json({ availableSlots });
   } catch (error) {
     console.error('Get provider time slots error:', error);
@@ -473,7 +511,7 @@ const simulatePayment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Appointment not found' });
     }
 
-    if (appointment.customerId.toString() !== req.user.id) {
+    if (appointment.customerId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 

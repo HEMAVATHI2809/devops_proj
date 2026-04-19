@@ -2,6 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { servicesService } from '../services/servicesService';
 import './ProviderDashboard.css';
 
+const initialFormState = {
+  name: '',
+  category: 'Healthcare & Wellness',
+  description: '',
+  durationMinutes: '60',
+  price: '',
+  appointmentFee: '0',
+  image: '',
+  availableDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+  availableTimeSlots: ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00']
+};
+
 const ProviderDashboard = () => {
   const [services, setServices] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -10,16 +22,7 @@ const ProviderDashboard = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const [formData, setFormData] = useState({
-    name: '',
-    category: 'Healthcare & Wellness',
-    description: '',
-    price: '',
-    appointmentFee: '',
-    image: '',
-    availableDays: [],
-    availableTimeSlots: ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00']
-  });
+  const [formData, setFormData] = useState(initialFormState);
 
   const categories = [
     'Healthcare & Wellness',
@@ -60,12 +63,38 @@ const ProviderDashboard = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+    setSuccess('');
     try {
-      console.log("Sending Fee:", formData.appointmentFee);
-      
+      const priceNum = Number(formData.price);
+      const feeNum = Number(formData.appointmentFee === '' ? 0 : formData.appointmentFee);
+      if (!Number.isFinite(priceNum) || priceNum < 0) {
+        setError('Please enter a valid price.');
+        return;
+      }
+      if (!Number.isFinite(feeNum) || feeNum < 0) {
+        setError('Please enter a valid appointment fee.');
+        return;
+      }
+      if (!formData.availableDays?.length) {
+        setError('Select at least one available day.');
+        return;
+      }
+      if (!formData.availableTimeSlots?.length) {
+        setError('Select at least one time slot.');
+        return;
+      }
+      const durationNum = Number(formData.durationMinutes);
+      if (!Number.isFinite(durationNum) || durationNum < 1 || durationNum > 1440) {
+        setError('Duration must be between 1 and 1440 minutes.');
+        return;
+      }
+
       const payload = {
         ...formData,
-        appointmentFee: Number(formData.appointmentFee)
+        price: priceNum,
+        appointmentFee: feeNum,
+        durationMinutes: durationNum
       };
 
       if (editingService) {
@@ -75,11 +104,16 @@ const ProviderDashboard = () => {
         await servicesService.createService(payload);
         setSuccess('Service created successfully');
       }
-      
-      resetForm();
+
+      resetForm(false);
       fetchServices();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save service');
+      const data = err.response?.data;
+      const msgFromErrors =
+        Array.isArray(data?.errors) && data.errors.length
+          ? data.errors.map((x) => x.msg || x.message).filter(Boolean).join(' ')
+          : '';
+      setError(msgFromErrors || data?.message || 'Failed to save service');
     }
   };
 
@@ -89,8 +123,9 @@ const ProviderDashboard = () => {
       name: service.name,
       category: service.category,
       description: service.description,
+      durationMinutes: service.durationMinutes != null ? String(service.durationMinutes) : '60',
       price: service.price,
-      appointmentFee: service.appointmentFee || 0,
+      appointmentFee: service.appointmentFee ?? 0,
       image: service.image || '',
       availableDays: service.availableDays,
       availableTimeSlots: service.availableTimeSlots
@@ -120,21 +155,22 @@ const ProviderDashboard = () => {
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      category: 'Healthcare & Wellness',
-      description: '',
-      price: '',
-      appointmentFee: '',
-      image: '',
-      availableDays: [],
-      availableTimeSlots: ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00']
-    });
+  const resetForm = (clearAlerts = true) => {
+    setFormData({ ...initialFormState });
     setEditingService(null);
     setShowAddForm(false);
+    if (clearAlerts) {
+      setError('');
+      setSuccess('');
+    }
+  };
+
+  const openCreateForm = () => {
+    setEditingService(null);
+    setFormData({ ...initialFormState });
     setError('');
     setSuccess('');
+    setShowAddForm(true);
   };
 
   const handleInputChange = (e) => {
@@ -173,7 +209,8 @@ const ProviderDashboard = () => {
         <h1>Provider Dashboard</h1>
         <button
           className="btn btn-primary"
-          onClick={() => setShowAddForm(true)}
+          type="button"
+          onClick={openCreateForm}
         >
           Add New Service
         </button>
@@ -222,6 +259,20 @@ const ProviderDashboard = () => {
                   value={formData.description}
                   onChange={handleInputChange}
                   rows="3"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Duration (minutes)</label>
+                <input
+                  type="number"
+                  name="durationMinutes"
+                  value={formData.durationMinutes}
+                  onChange={handleInputChange}
+                  min="1"
+                  max="1440"
+                  step="1"
                   required
                 />
               </div>
@@ -327,11 +378,16 @@ const ProviderDashboard = () => {
                 <p className="service-description">{service.description}</p>
                 <div className="service-details">
                   <span className="price">Price: ₹{service.price}</span>
+                  {service.durationMinutes != null && (
+                    <span className="price" style={{ marginLeft: '10px' }}>
+                      Duration: {service.durationMinutes} min
+                    </span>
+                  )}
                   <span className="price" style={{marginLeft: '10px'}}>Fee: ₹{service.appointmentFee || 0}</span>
                 </div>
                 <div className="service-availability">
-                  <p><strong>Days:</strong> {service.availableDays.join(', ')}</p>
-                  <p><strong>Time Slots:</strong> {service.availableTimeSlots.join(', ')}</p>
+                  <p><strong>Days:</strong> {(service.availableDays || []).join(', ') || '—'}</p>
+                  <p><strong>Time Slots:</strong> {(service.availableTimeSlots || []).join(', ') || '—'}</p>
                 </div>
                 <div className="service-actions">
                   <button

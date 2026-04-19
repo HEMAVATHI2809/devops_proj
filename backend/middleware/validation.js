@@ -3,6 +3,15 @@ const { body, validationResult } = require('express-validator');
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    console.error('Request validation failed:', {
+      path: req.path,
+      method: req.method,
+      errors: errors.array().map((err) => ({
+        field: err.path,
+        message: err.msg,
+        value: err.value
+      }))
+    });
     return res.status(400).json({
       message: 'Validation failed',
       errors: errors.array()
@@ -54,12 +63,16 @@ const validateService = [
     .isLength({ min: 1, max: 1000 })
     .withMessage('Description must be between 1 and 1000 characters'),
   body('price')
-    .isNumeric()
-    .isFloat({ min: 0 })
-    .withMessage('Price must be a positive number'),
-  body('duration')
-    .isInt({ min: 15 })
-    .withMessage('Duration must be at least 15 minutes'),
+    .custom((v) => v !== undefined && v !== null && String(v).trim() !== '' && !Number.isNaN(Number(v)) && Number(v) >= 0)
+    .withMessage('Price must be a non-negative number'),
+  body('durationMinutes')
+    .optional({ checkFalsy: true })
+    .isInt({ min: 1, max: 1440 })
+    .withMessage('Duration must be an integer between 1 and 1440 minutes'),
+  body('appointmentFee')
+    .optional({ values: 'null' })
+    .custom((v) => v === undefined || v === null || v === '' || (!Number.isNaN(Number(v)) && Number(v) >= 0))
+    .withMessage('Appointment fee must be a non-negative number'),
   body('image')
     .optional({ checkFalsy: true })
     .isURL()
@@ -85,9 +98,9 @@ const validateAppointment = [
     .isMongoId()
     .withMessage('Invalid service ID'),
   body('date')
-    .isISO8601()
-    .toDate()
-    .withMessage('Invalid date format'),
+    .trim()
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('Date must be YYYY-MM-DD'),
   body('timeSlot')
     .trim()
     .notEmpty()

@@ -14,15 +14,28 @@ const createService = async (req, res) => {
 
     // Add providerId from authenticated user
     console.log("Received Fee:", req.body.appointmentFee);
+    const priceNum = Number(req.body.price);
+    const dm = Number(req.body.durationMinutes);
     const serviceData = {
-      ...req.body,
-      appointmentFee: req.body.appointmentFee !== undefined ? Number(req.body.appointmentFee) : 0,
+      name: req.body.name,
+      category: req.body.category,
+      description: req.body.description,
+      price: Number.isFinite(priceNum) ? priceNum : req.body.price,
+      appointmentFee: req.body.appointmentFee !== undefined && req.body.appointmentFee !== ''
+        ? Number(req.body.appointmentFee)
+        : 0,
+      image: req.body.image || '',
+      availableDays: req.body.availableDays,
+      availableTimeSlots: req.body.availableTimeSlots,
       providerId: req.user._id,
       isActive: true
     };
+    if (Number.isFinite(dm) && dm > 0) {
+      serviceData.durationMinutes = dm;
+    }
 
     // Validate required fields
-    if (!serviceData.name || !serviceData.category || !serviceData.price) {
+    if (!serviceData.name || !serviceData.category || !Number.isFinite(Number(serviceData.price))) {
       return res.status(400).json({ 
         message: 'Name, category, and price are required fields' 
       });
@@ -46,6 +59,11 @@ const createService = async (req, res) => {
   } catch (error) {
     console.error('Create service error:', error);
     if (error.name === 'ValidationError') {
+      console.error('Service validation details:', Object.values(error.errors || {}).map((e) => ({
+        field: e.path,
+        message: e.message,
+        value: e.value
+      })));
       return res.status(400).json({ 
         success: false,
         message: 'Validation error',
@@ -182,7 +200,17 @@ const updateService = async (req, res) => {
       });
     }
 
-    const { name, description, category, price, appointmentFee } = req.body;
+    const {
+      name,
+      description,
+      category,
+      price,
+      appointmentFee,
+      image,
+      availableDays,
+      availableTimeSlots,
+      durationMinutes
+    } = req.body;
     console.log("Received Fee for update:", appointmentFee);
     
     // Validate required fields
@@ -210,14 +238,32 @@ const updateService = async (req, res) => {
       name,
       description,
       category,
-      price,
+      price: Number(price),
       appointmentFee: appointmentFee !== undefined ? Number(appointmentFee) : service.appointmentFee,
       updatedAt: Date.now()
     };
+    if (image !== undefined) {
+      updateData.image = image;
+    }
+    if (Array.isArray(availableDays)) {
+      updateData.availableDays = availableDays;
+    }
+    if (Array.isArray(availableTimeSlots)) {
+      updateData.availableTimeSlots = availableTimeSlots;
+    }
+    const dm = Number(durationMinutes);
+    if (Number.isFinite(dm) && dm > 0) {
+      updateData.durationMinutes = dm;
+    }
+
+    const mongoUpdate = { $set: updateData };
+    if (durationMinutes === '' || durationMinutes === null || durationMinutes === undefined) {
+      mongoUpdate.$unset = { durationMinutes: 1 };
+    }
 
     const updatedService = await Service.findByIdAndUpdate(
       req.params.id,
-      { $set: updateData },
+      mongoUpdate,
       { new: true, runValidators: true }
     ).populate('providerId', 'name businessName email phone');
 

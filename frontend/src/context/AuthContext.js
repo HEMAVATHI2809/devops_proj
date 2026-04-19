@@ -50,6 +50,14 @@ export const AuthProvider = ({ children }) => {
     initAuth();
   }, []);
 
+  const formatApiError = (error, fallback) => {
+    const data = error.response?.data;
+    if (Array.isArray(data?.errors) && data.errors.length) {
+      return data.errors.map((e) => e.msg || e.message).filter(Boolean).join(' ');
+    }
+    return data?.message || fallback;
+  };
+
   const login = async (email, password) => {
     try {
       const response = await api.post('/auth/login', { email, password });
@@ -65,7 +73,7 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       return { 
         success: false, 
-        message: error.response?.data?.message || 'Login failed' 
+        message: formatApiError(error, 'Login failed')
       };
     }
   };
@@ -85,7 +93,7 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       return { 
         success: false, 
-        message: error.response?.data?.message || 'Signup failed' 
+        message: formatApiError(error, 'Signup failed')
       };
     }
   };

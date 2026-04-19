@@ -20,9 +20,9 @@ export const appointmentsService = {
   },
 
   // Get available time slots for a provider on a specific date
-  getAvailableTimeSlots: async (providerId, date) => {
+  getAvailableTimeSlots: async (providerId, date, serviceId) => {
     const response = await api.get('/appointments/time-slots/available', {
-      params: { providerId, date }
+      params: { providerId, date, ...(serviceId ? { serviceId } : {}) }
     });
     return response.data;
   },

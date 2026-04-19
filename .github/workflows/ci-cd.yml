@@ -1,0 +1,139 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: appointment-scheduler-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+
+      - name: Frontend — install & test
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          CI=true npm test -- --watchAll=false --passWithNoTests
+
+      - name: Backend — install & test
+        working-directory: backend
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+
+      - name: Docker — verify images build
+        run: docker compose build --parallel
+
+  build-and-push:
+    name: Build & push images
+    runs-on: ubuntu-latest
+    needs: [test]
+    timeout-minutes: 30
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - context: ./frontend
+            image: appointment-scheduler-frontend
+          - context: ./backend
+            image: appointment-scheduler-backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=${{ github.sha }}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to server
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 20
+    steps:
+      - name: Checkout (for deploy scripts)
+        uses: actions/checkout@v4
+
+      - name: Install SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Upload compose and deploy script
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
+          ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_PATH}/scripts'"
+          scp docker-compose.yml "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
+          scp scripts/deploy.sh "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/scripts/"
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          envs: IMAGE_TAG
+          script: |
+            set -euo pipefail
+            export DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+            export IMAGE_TAG="${IMAGE_TAG}"
+            cd "${DEPLOY_PATH}"
+            bash scripts/deploy.sh

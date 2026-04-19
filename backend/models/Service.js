@@ -28,6 +28,11 @@ const serviceSchema = new mongoose.Schema({
     required: [true, 'Price is required'],
     min: [0, 'Price cannot be negative']
   },
+  durationMinutes: {
+    type: Number,
+    min: [1, 'Duration must be at least 1 minute'],
+    max: [1440, 'Duration cannot exceed 1440 minutes (24h)']
+  },
   appointmentFee: {
     type: Number,
     required: [true, 'Appointment fee is required'],

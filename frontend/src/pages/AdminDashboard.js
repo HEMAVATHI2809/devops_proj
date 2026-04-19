@@ -63,8 +63,11 @@ const AdminDashboard = () => {
       
       const payload = {
         ...serviceForm,
+        category: serviceForm.domain,
         appointmentFee: Number(serviceForm.appointmentFee)
       };
+      delete payload.domain;
+      delete payload.providerName;
 
       if (editingService) {
         await api.put(`/services/${editingService._id}`, payload);
@@ -91,7 +94,7 @@ const AdminDashboard = () => {
     setEditingService(service);
     setServiceForm({
       name: service.name,
-      domain: service.domain,
+      domain: service.category,
       description: service.description,
       providerName: service.providerName,
       price: service.price || 0,
@@ -495,10 +498,10 @@ const AdminDashboard = () => {
                         {service.name}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                        {service.domain}
+                        {service.category}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                        {service.providerName}
+                        {service.providerId?.businessName || service.providerId?.name || service.providerName || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                         ₹{service.appointmentFee || 0}

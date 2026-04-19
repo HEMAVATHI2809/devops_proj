@@ -1,4 +1,8 @@
-version: "3.9"
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   frontend:
@@ -6,76 +10,79 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        REACT_APP_API_URL: /api
-    image: appointment-frontend:latest
-    container_name: appointment-frontend
+        REACT_APP_API_URL: ${REACT_APP_API_URL:-/api}
+    image: ${FRONTEND_IMAGE:-appointment-scheduler-frontend}:${IMAGE_TAG:-latest}
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3001}:80"
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    init: true
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: *default-logging
     networks:
-      - app-network
+      - edge
+      - app-internal
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: appointment-backend:latest
-    container_name: appointment-backend
-    ports:
-      - "5000:5000"
-    env_file:
-      - ./backend/.env
+    image: ${BACKEND_IMAGE:-appointment-scheduler-backend}:${IMAGE_TAG:-latest}
+    expose:
+      - "5000"
     environment:
-      - NODE_ENV=production
-      - MONGO_URI=mongodb://mongo:27017/appointments
-      - MONGODB_URI=mongodb://mongo:27017/appointments
-      - FRONTEND_URL=http://localhost:3000
+      NODE_ENV: production
+      PORT: "5000"
+      JWT_SECRET: ${JWT_SECRET:-appointment-scheduler-docker-dev-jwt-secret-min-32-chars}
+      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017/appointments}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/appointments}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
+      FRONTEND_URLS: ${FRONTEND_URLS:-http://localhost:3001}
     depends_on:
       mongo:
         condition: service_healthy
     restart: unless-stopped
+    init: true
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/api/health"]
-      interval: 15s
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:5000/api/health"]
+      interval: 30s
       timeout: 5s
-      retries: 5
-      start_period: 20s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      retries: 3
+      start_period: 60s
+    logging: *default-logging
     networks:
-      - app-network
+      - app-internal
 
   mongo:
-    image: mongo:7
-    container_name: appointment-mongo
-    ports:
-      - "27017:27017"
+    image: mongo:7.0
+    command: ["mongod", "--bind_ip_all"]
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
+    init: true
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 15s
+      interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 20s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      start_period: 40s
+    logging: *default-logging
     networks:
-      - app-network
+      - app-internal
 
 volumes:
   mongo_data:
 
 networks:
-  app-network:
+  edge:
     driver: bridge
+  app-internal:
+    driver: bridge
+    internal: true

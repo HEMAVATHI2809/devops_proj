@@ -8,15 +8,24 @@ const serviceRoutes = require('./routes/services');
 const appointmentRoutes = require('./routes/appointments');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Middleware
 const allowedOrigins = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || 'http://localhost:3000')
   .split(',')
   .map((origin) => origin.trim());
 
+const isLocalhostBrowserOrigin = (origin) =>
+  typeof origin === 'string' &&
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin.trim());
+
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    // Docker / local dev: browsers often use http://localhost:<any port> while env lists only one port
+    if (isLocalhostBrowserOrigin(origin)) {
       return callback(null, true);
     }
     return callback(new Error('Not allowed by CORS'));

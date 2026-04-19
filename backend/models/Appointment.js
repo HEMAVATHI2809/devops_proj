@@ -20,10 +20,15 @@ const appointmentSchema = new mongoose.Schema({
     type: Date,
     required: [true, 'Date is required'],
     validate: {
-      validator: function(date) {
-        return date > new Date();
+      // Stored as UTC midnight for the chosen calendar day; strict `date > now` breaks same-day and payment re-saves.
+      validator: function (date) {
+        const d = new Date(date);
+        const today = new Date();
+        const utcDay = (dt) =>
+          Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
+        return utcDay(d) >= utcDay(today);
       },
-      message: 'Appointment date must be in the future'
+      message: 'Appointment date cannot be in the past'
     }
   },
   timeSlot: {

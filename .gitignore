@@ -29,6 +29,7 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+.deployment-image-tag
 
 # Jenkins
 .jenkins/

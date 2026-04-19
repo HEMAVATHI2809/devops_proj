@@ -121,6 +121,13 @@ const ProviderBookingManagement = () => {
     }
   };
 
+  const formatStatusLabel = (status) => {
+    if (status === 'accepted') return 'Confirmed';
+    if (status === 'rejected') return 'Rejected';
+    if (status === 'pending') return 'Pending';
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  };
+
   const getStatusIcon = (status) => {
     switch (status) {
       case 'pending':
@@ -268,7 +275,7 @@ const ProviderBookingManagement = () => {
                   <div className="appointment-info">
                     <h3>{appointment.serviceName}</h3>
                     <span className={`status-badge ${getStatusColor(appointment.status)}`}>
-                      {getStatusIcon(appointment.status)} {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
+                      {getStatusIcon(appointment.status)} {formatStatusLabel(appointment.status)}
                     </span>
                   </div>
                   <div className="appointment-date">
@@ -332,7 +339,7 @@ const ProviderBookingManagement = () => {
                 <p><strong>Time:</strong> {selectedAppointment.timeSlot}</p>
                 <p><strong>Status:</strong> 
                   <span className={`status-badge ${getStatusColor(selectedAppointment.status)}`}>
-                    {getStatusIcon(selectedAppointment.status)} {selectedAppointment.status.charAt(0).toUpperCase() + selectedAppointment.status.slice(1)}
+                    {getStatusIcon(selectedAppointment.status)} {formatStatusLabel(selectedAppointment.status)}
                   </span>
                 </p>
               </div>

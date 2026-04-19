@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Toast from '../components/Toast';
-import PaymentModal from '../components/PaymentModal';
-import '../components/Payment.css';
 import api from '../services/api';
 
 const BookAppointment = () => {
@@ -16,10 +14,6 @@ const BookAppointment = () => {
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [toast, setToast] = useState(null);
-  
-  // Payment state
-  const [showPayment, setShowPayment] = useState(false);
-  const [pendingAppointmentId, setPendingAppointmentId] = useState(null);
 
   useEffect(() => {
     const fetchService = async () => {
@@ -42,6 +36,13 @@ const BookAppointment = () => {
     }
   }, [serviceId, navigate]);
 
+  const toLocalYMD = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   const getAvailableDates = () => {
     if (!service) return [];
     
@@ -54,7 +55,7 @@ const BookAppointment = () => {
 
     for (let d = new Date(today); d <= maxDate; d.setDate(d.getDate() + 1)) {
       const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
-      if (service.availableDays.includes(dayName)) {
+      if ((service.availableDays || []).includes(dayName)) {
         dates.push(new Date(d));
       }
     }
@@ -78,45 +79,23 @@ const BookAppointment = () => {
     setBooking(true);
 
     try {
-      const response = await api.post('/appointments', {
+      await api.post('/appointments', {
         serviceId: serviceId,
         date: selectedDate,
         timeSlot: selectedTimeSlot
       });
 
-      setPendingAppointmentId(response.data.appointment._id);
-      setShowPayment(true);
+      setToast({ message: 'Booking created (pending). Redirecting to your dashboard…', type: 'success' });
+      setBooking(false);
+      setTimeout(() => navigate('/customer-dashboard'), 800);
     } catch (error) {
       console.error('Error booking appointment:', error);
       setToast({
-        message: error.response?.data?.message || 'Failed to initiate booking',    
+        message: error.response?.data?.message || 'Failed to create booking',
         type: 'error'
       });
-      setBooking(false); // Only reset if failed. If success, modal opens and handles flow
-    }
-  };
-
-  const handlePaymentSuccess = async () => {
-    try {
-      if (pendingAppointmentId) {
-        await api.post(`/appointments/${pendingAppointmentId}/payment`);
-      }
-      setToast({ message: 'Appointment booked successfully!', type: 'success' });
-      setTimeout(() => {
-        navigate('/customer-dashboard');
-      }, 1000);
-    } catch (error) {
-      console.error('Error verifying payment:', error);
-      setToast({ message: 'Payment verification failed', type: 'error' });
       setBooking(false);
-      setShowPayment(false);
     }
-  };
-
-  const handlePaymentClose = () => {
-    setShowPayment(false);
-    setBooking(false);
-    setToast({ message: 'Payment cancelled. Booking is pending.', type: 'error' });
   };
 
   if (loading) {
@@ -241,14 +220,14 @@ const BookAppointment = () => {
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                     {availableDates.map((date) => (
                       <button
-                        key={date.toISOString()}
+                        key={toLocalYMD(date)}
                         type="button"
                         onClick={() => {
-                          setSelectedDate(date.toISOString().split('T')[0]);
+                          setSelectedDate(toLocalYMD(date));
                           setSelectedTimeSlot(''); // Reset time slot when date changes
                         }}
                         className={`p-3 text-center rounded-lg border transition-colors ${
-                          selectedDate === date.toISOString().split('T')[0]
+                          selectedDate === toLocalYMD(date)
                             ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
                             : 'border-gray-200 hover:border-gray-300 dark:border-gray-600 dark:hover:border-gray-500 text-gray-700 dark:text-gray-300'
                         }`}
@@ -312,7 +291,7 @@ const BookAppointment = () => {
                     <p>Service: {service.name}</p>
                     <p>Provider: {service.providerId?.businessName || service.providerId?.name}</p>
                     <p className="font-semibold text-primary-600 dark:text-primary-400 mt-2">
-                      Appointment Fee: ₹{service.appointmentFee || 0}
+                      Price: ₹{service.price}
                     </p>
                     <p>Date: {new Date(selectedDate).toLocaleDateString('en-US', { 
                       weekday: 'long', 
@@ -347,7 +326,7 @@ const BookAppointment = () => {
                       Booking...
                     </div>
                   ) : (
-                    'Proceed to Pay'
+                    'Submit booking'
                   )}
                 </button>
               </div>
@@ -364,15 +343,6 @@ const BookAppointment = () => {
         />
       )}
 
-      {showPayment && (
-        <PaymentModal
-          isOpen={showPayment}
-          onClose={handlePaymentClose}
-          amount={service.appointmentFee || 0}
-          serviceName={service.name}
-          onSuccess={handlePaymentSuccess}
-        />
-      )}
     </div>
   );
 };
