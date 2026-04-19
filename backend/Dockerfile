@@ -14,6 +14,7 @@ RUN apk add --no-cache wget \
 COPY package*.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY server.js ./
+COPY config ./config
 COPY routes ./routes
 COPY controllers ./controllers
 COPY models ./models
