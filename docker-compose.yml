@@ -13,7 +13,7 @@ services:
         REACT_APP_API_URL: ${REACT_APP_API_URL:-/api}
     image: ${FRONTEND_IMAGE:-appointment-scheduler-frontend}:${IMAGE_TAG:-latest}
     ports:
-      - "${FRONTEND_PORT:-3001}:80"
+      - "3001:80"
     depends_on:
       backend:
         condition: service_healthy

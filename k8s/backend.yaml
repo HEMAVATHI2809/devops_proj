@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  ports:
+    - port: 5000
+  selector:
+    app: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: appointment-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "5000"
+            - name: JWT_SECRET
+              value: "appointment-scheduler-docker-dev-jwt-secret-min-32-chars"
+            - name: MONGO_URI
+              value: "mongodb://mongo:27017/appointments"
+            - name: MONGODB_URI
+              value: "mongodb://mongo:27017/appointments"
+            # Setting it to match the NodePort we mapped for the frontend
+            - name: FRONTEND_URL
+              value: "http://localhost:30001"
+            - name: FRONTEND_URLS
+              value: "http://localhost:30001"

@@ -12,7 +12,7 @@ pipeline {
         COMPOSE_FILE = 'docker-compose.yml'
         FRONTEND_IMAGE = 'appointment-frontend'
         BACKEND_IMAGE = 'appointment-backend'
-        FRONTEND_PORT = '3000'
+        FRONTEND_PORT = '3001'
         BACKEND_PORT = '5000'
         MONGO_PORT = '27017'
     } 
