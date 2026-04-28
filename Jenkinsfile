@@ -50,6 +50,14 @@ pipeline {
         stage('Docker Compose Up') {
             steps {
                 sh 'docker compose -f $COMPOSE_FILE down || true'
+                sh '''
+                    CONTAINERS_ON_FRONTEND_PORT=$(docker ps --filter "publish=${FRONTEND_PORT}" -q)
+                    if [ -n "$CONTAINERS_ON_FRONTEND_PORT" ]; then
+                      echo "Releasing port ${FRONTEND_PORT} from existing containers..."
+                      docker stop $CONTAINERS_ON_FRONTEND_PORT || true
+                      docker rm $CONTAINERS_ON_FRONTEND_PORT || true
+                    fi
+                '''
                 sh 'docker compose -f $COMPOSE_FILE up -d'
                 sh 'docker compose -f $COMPOSE_FILE ps'
             }
