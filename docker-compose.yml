@@ -68,7 +68,8 @@ services:
     restart: unless-stopped
     init: true
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      # Exit code drives Docker health status; ensure we return 0/1 explicitly.
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"quit(db.adminCommand('ping').ok ? 0 : 1)\""]
       interval: 30s
       timeout: 10s
       retries: 5

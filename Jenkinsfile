@@ -49,7 +49,7 @@ pipeline {
 
         stage('Docker Compose Up') {
             steps {
-                sh 'docker compose -f $COMPOSE_FILE down || true'
+                sh 'docker compose -f $COMPOSE_FILE down -v --remove-orphans || true'
                 sh '''
                     CONTAINERS_ON_FRONTEND_PORT=$(docker ps --filter "publish=${FRONTEND_PORT}" -q)
                     if [ -n "$CONTAINERS_ON_FRONTEND_PORT" ]; then
